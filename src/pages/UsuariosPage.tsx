@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { useProfiles, useUpdateProfile, useCreateUser } from "@/hooks/useProfiles";
+import { useProfiles, useUpdateProfile, useCreateUser, useResetPassword, useDeleteUser } from "@/hooks/useProfiles";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { SETORES, ROLE_LABELS } from "@/constants/setores";
 import type { Role, Setor } from "@/types";
-import { Loader2, UserCheck, UserX, UserPlus } from "lucide-react";
+import { Loader2, UserCheck, UserX, UserPlus, KeyRound, Trash2 } from "lucide-react";
 
 const ROLES: Role[] = ["colaborador", "gestor", "admin"];
 
@@ -29,7 +29,13 @@ export function UsuariosPage() {
   const { data: profiles = [], isLoading } = useProfiles();
   const updateProfile = useUpdateProfile();
   const createUser = useCreateUser();
+  const resetPassword = useResetPassword();
+  const deleteUser = useDeleteUser();
+  const [confirmDelete, setConfirmDelete] = useState<{ open: boolean; userId: string; nome: string; error?: string }>({ open: false, userId: "", nome: "" });
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [resetDialog, setResetDialog] = useState<{ open: boolean; userId: string; nome: string }>({ open: false, userId: "", nome: "" });
+  const [newPassword, setNewPassword] = useState("");
+  const [resetError, setResetError] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const {
@@ -65,6 +71,28 @@ export function UsuariosPage() {
 
   async function changeSetor(id: string, setor: Setor) {
     await updateProfile.mutateAsync({ id, setor });
+  }
+
+  async function handleDeleteUser() {
+    setConfirmDelete((d) => ({ ...d, error: undefined }));
+    try {
+      await deleteUser.mutateAsync(confirmDelete.userId);
+      setConfirmDelete({ open: false, userId: "", nome: "" });
+    } catch (err) {
+      setConfirmDelete((d) => ({ ...d, error: err instanceof Error ? err.message : "Erro ao excluir usuário." }));
+    }
+  }
+
+  async function handleResetPassword() {
+    setResetError(null);
+    if (newPassword.length < 6) { setResetError("Mínimo 6 caracteres."); return; }
+    try {
+      await resetPassword.mutateAsync({ userId: resetDialog.userId, newPassword });
+      setResetDialog({ open: false, userId: "", nome: "" });
+      setNewPassword("");
+    } catch (err) {
+      setResetError(err instanceof Error ? err.message : "Erro ao redefinir senha.");
+    }
   }
 
   if (isLoading) {
@@ -125,6 +153,24 @@ export function UsuariosPage() {
                     ? <><UserCheck className="h-3 w-3 mr-1" />Ativo</>
                     : <><UserX className="h-3 w-3 mr-1" />Inativo</>}
                 </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 text-xs"
+                  title="Redefinir senha"
+                  onClick={() => { setResetError(null); setNewPassword(""); setResetDialog({ open: true, userId: p.id, nome: p.nome }); }}
+                >
+                  <KeyRound className="h-3 w-3" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 text-xs text-destructive hover:text-destructive hover:bg-destructive/10"
+                  title="Excluir usuário"
+                  onClick={() => setConfirmDelete({ open: true, userId: p.id, nome: p.nome })}
+                >
+                  <Trash2 className="h-3 w-3" />
+                </Button>
               </div>
             </CardContent>
           </Card>
@@ -137,8 +183,66 @@ export function UsuariosPage() {
         )}
       </div>
 
+      {/* Dialog confirmar exclusão */}
+      <Dialog open={confirmDelete.open} onOpenChange={(o) => setConfirmDelete((d) => ({ ...d, open: o }))}>
+        <DialogContent className="sm:max-w-sm" aria-describedby={undefined}>
+          <DialogHeader>
+            <DialogTitle>Excluir usuário</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Tem certeza que deseja excluir <span className="font-medium text-foreground">{confirmDelete.nome}</span>? Esta ação não pode ser desfeita.
+          </p>
+          {confirmDelete.error && (
+            <p className="text-xs text-red-500 bg-red-50 border border-red-200 rounded p-2">{confirmDelete.error}</p>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmDelete({ open: false, userId: "", nome: "" })}>
+              Cancelar
+            </Button>
+            <Button variant="destructive" onClick={handleDeleteUser} disabled={deleteUser.isPending}>
+              {deleteUser.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Excluir
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog redefinir senha */}
+      <Dialog open={resetDialog.open} onOpenChange={(o) => setResetDialog((d) => ({ ...d, open: o }))}>
+        <DialogContent className="sm:max-w-sm" aria-describedby={undefined}>
+          <DialogHeader>
+            <DialogTitle>Redefinir senha</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Definindo nova senha para <span className="font-medium text-foreground">{resetDialog.nome}</span>.
+          </p>
+          <div className="space-y-1">
+            <Label htmlFor="newPassword">Nova senha</Label>
+            <Input
+              id="newPassword"
+              type="password"
+              placeholder="Mínimo 6 caracteres"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+            />
+          </div>
+          {resetError && (
+            <p className="text-xs text-red-500 bg-red-50 border border-red-200 rounded p-2">{resetError}</p>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setResetDialog({ open: false, userId: "", nome: "" })}>
+              Cancelar
+            </Button>
+            <Button onClick={handleResetPassword} disabled={resetPassword.isPending}>
+              {resetPassword.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Salvar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md" aria-describedby={undefined}>
           <DialogHeader>
             <DialogTitle>Novo Usuário</DialogTitle>
           </DialogHeader>

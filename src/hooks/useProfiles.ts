@@ -38,6 +38,50 @@ export function useUpdateProfile() {
   });
 }
 
+export function useResetPassword() {
+  return useMutation({
+    mutationFn: async ({ userId, newPassword }: { userId: string; newPassword: string }) => {
+      const { data: { session } } = await supabase.auth.getSession();
+      const { data, error } = await supabase.functions.invoke("create-user", {
+        body: { action: "reset-password", userId, newPassword },
+        headers: { Authorization: `Bearer ${session?.access_token}` },
+      });
+      if (error) {
+        const msg = (error as any)?.context
+          ? await (error as any).context.json().then((j: any) => j?.error).catch(() => null)
+          : null;
+        throw new Error(msg || error.message);
+      }
+      if (data?.error) throw new Error(data.error);
+      return data;
+    },
+  });
+}
+
+export function useDeleteUser() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (userId: string) => {
+      const { data: { session } } = await supabase.auth.getSession();
+      const { data, error } = await supabase.functions.invoke("create-user", {
+        body: { action: "delete-user", userId },
+        headers: { Authorization: `Bearer ${session?.access_token}` },
+      });
+      if (error) {
+        const msg = (error as any)?.context
+          ? await (error as any).context.json().then((j: any) => j?.error).catch(() => null)
+          : null;
+        throw new Error(msg || error.message);
+      }
+      if (data?.error) throw new Error(data.error);
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["profiles"] });
+    },
+  });
+}
+
 export function useCreateUser() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -56,10 +100,8 @@ export function useCreateUser() {
     }) => {
       const { data: { session } } = await supabase.auth.getSession();
       const { data, error } = await supabase.functions.invoke("create-user", {
-        body: { email, password, nome, setor, role },
-        headers: {
-          Authorization: `Bearer ${session?.access_token}`,
-        },
+        body: { action: "create", email, password, nome, setor, role },
+        headers: { Authorization: `Bearer ${session?.access_token}` },
       });
       if (error) throw error;
       if (data?.error) throw new Error(data.error);

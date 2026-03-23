@@ -96,6 +96,51 @@ export function useArquivarTarefa() {
   });
 }
 
+export function useTarefasArquivadas() {
+  return useQuery({
+    queryKey: ["tarefas-arquivadas"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("tarefas")
+        .select(`*, criador:profiles!criado_por(id, nome, setor, role), responsavel:profiles!atribuido_para(id, nome, setor, role)`)
+        .not("arquivado_em", "is", null)
+        .order("arquivado_em", { ascending: false });
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+}
+
+export function useRestaurarTarefa() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase
+        .from("tarefas")
+        .update({ arquivado_em: null, status: "a_fazer" })
+        .eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["tarefas"] });
+      queryClient.invalidateQueries({ queryKey: ["tarefas-arquivadas"] });
+    },
+  });
+}
+
+export function useDeleteTarefa() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from("tarefas").delete().eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["tarefas-arquivadas"] });
+    },
+  });
+}
+
 export function useCreateTarefa() {
   const queryClient = useQueryClient();
   return useMutation({

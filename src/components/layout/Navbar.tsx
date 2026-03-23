@@ -3,7 +3,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { ROLE_LABELS, SETORES } from "@/constants/setores";
-import { LayoutDashboard, Kanban, Users, LogOut } from "lucide-react";
+import { LayoutDashboard, Kanban, Users, LogOut, Archive } from "lucide-react";
 
 export function Navbar() {
   const { profile, signOut } = useAuth();
@@ -15,8 +15,9 @@ export function Navbar() {
   const initials = profile.nome.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
 
   const links = [
-    { to: "/kanban", label: "Kanban", icon: Kanban, roles: ["colaborador", "gestor", "admin"] },
+    { to: "/tarefas", label: "Tarefas", icon: Kanban, roles: ["colaborador", "gestor", "admin"] },
     { to: "/painel", label: "Painel", icon: LayoutDashboard, roles: ["gestor", "admin"] },
+    { to: "/arquivados", label: "Arquivados", icon: Archive, roles: ["gestor", "admin"] },
     { to: "/usuarios", label: "Usuários", icon: Users, roles: ["admin"] },
   ].filter((l) => l.roles.includes(profile.role));
 

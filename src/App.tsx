@@ -9,6 +9,7 @@ import { TarefaDetailPage } from "@/pages/TarefaDetailPage";
 import { TarefaFormPage } from "@/pages/TarefaFormPage";
 import { PainelPage } from "@/pages/PainelPage";
 import { UsuariosPage } from "@/pages/UsuariosPage";
+import { ArquivadosPage } from "@/pages/ArquivadosPage";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -42,6 +43,14 @@ export default function App() {
                 element={
                   <ProtectedRoute allowedRoles={["gestor", "admin"]}>
                     <PainelPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/arquivados"
+                element={
+                  <ProtectedRoute allowedRoles={["gestor", "admin"]}>
+                    <ArquivadosPage />
                   </ProtectedRoute>
                 }
               />

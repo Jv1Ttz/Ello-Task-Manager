@@ -11,14 +11,12 @@ Deno.serve(async (req) => {
   }
 
   try {
-    // Cliente com service_role para criar usuários via Admin API
     const supabaseAdmin = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
       { auth: { autoRefreshToken: false, persistSession: false } }
     );
 
-    // Cliente com o JWT do usuário logado para verificar se é admin
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
       return new Response(JSON.stringify({ error: "Não autorizado" }), {
@@ -33,7 +31,6 @@ Deno.serve(async (req) => {
       { global: { headers: { Authorization: authHeader } } }
     );
 
-    // Pega o ID do usuário logado
     const { data: { user }, error: userError } = await supabaseUser.auth.getUser();
     if (userError || !user) {
       return new Response(JSON.stringify({ error: "Não autorizado" }), {
@@ -42,7 +39,6 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Verifica se quem está chamando é admin
     const { data: callerProfile, error: profileError } = await supabaseUser
       .from("profiles")
       .select("role")
@@ -50,54 +46,157 @@ Deno.serve(async (req) => {
       .single();
 
     if (profileError || callerProfile?.role !== "admin") {
-      return new Response(JSON.stringify({ error: "Acesso negado. Apenas administradores podem criar usuários." }), {
+      return new Response(JSON.stringify({ error: "Acesso negado." }), {
         status: 403,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // Dados do novo usuário
-    const { email, password, nome, setor, role } = await req.json();
+    const body = await req.json();
+    const { action } = body;
 
-    if (!email || !password || !nome || !setor || !role) {
-      return new Response(JSON.stringify({ error: "Campos obrigatórios ausentes." }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+    // ── Criar usuário ──────────────────────────────────────────
+    if (action === "create" || !action) {
+      const { email, password, nome, setor, role } = body;
 
-    // Cria o usuário via Admin API (não derruba a sessão do admin)
-    const { data: newUser, error: createError } = await supabaseAdmin.auth.admin.createUser({
-      email,
-      password,
-      email_confirm: true, // já confirma o e-mail automaticamente
-      user_metadata: { nome, setor, role },
-    });
+      if (!email || !password || !nome || !setor || !role) {
+        return new Response(JSON.stringify({ error: "Campos obrigatórios ausentes." }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
 
-    if (createError) {
-      return new Response(JSON.stringify({ error: createError.message }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    // O trigger handle_new_user cria o profile automaticamente.
-    // Mas garantimos aqui caso o trigger não esteja ativo ainda.
-    if (newUser.user) {
-      await supabaseAdmin.from("profiles").upsert({
-        id: newUser.user.id,
-        nome,
+      const { data: newUser, error: createError } = await supabaseAdmin.auth.admin.createUser({
         email,
-        setor,
-        role,
-        ativo: true,
-      }, { onConflict: "id" });
+        password,
+        email_confirm: true,
+        user_metadata: { nome, setor, role },
+      });
+
+      if (createError) {
+        return new Response(JSON.stringify({ error: createError.message }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      if (newUser.user) {
+        await supabaseAdmin.from("profiles").upsert({
+          id: newUser.user.id,
+          nome,
+          email,
+          setor,
+          role,
+          ativo: true,
+        }, { onConflict: "id" });
+      }
+
+      return new Response(JSON.stringify({ user: newUser.user }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
-    return new Response(JSON.stringify({ user: newUser.user }), {
-      status: 200,
+    // ── Redefinir senha ────────────────────────────────────────
+    if (action === "reset-password") {
+      const { userId, newPassword } = body;
+
+      if (!userId || !newPassword || newPassword.length < 6) {
+        return new Response(JSON.stringify({ error: "userId e senha (mín. 6 caracteres) são obrigatórios." }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const { error: resetError } = await supabaseAdmin.auth.admin.updateUserById(userId, {
+        password: newPassword,
+      });
+
+      if (resetError) {
+        return new Response(JSON.stringify({ error: resetError.message }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // ── Excluir usuário ────────────────────────────────────────
+    if (action === "delete-user") {
+      const { userId } = body;
+
+      if (!userId) {
+        return new Response(JSON.stringify({ error: "userId é obrigatório." }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Impede o admin de excluir a si mesmo
+      if (userId === user.id) {
+        return new Response(JSON.stringify({ error: "Você não pode excluir sua própria conta." }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Limpa referências antes de deletar para evitar FK violations
+      // 1. Arquiva tarefas criadas pelo usuário
+      await supabaseAdmin
+        .from("tarefas")
+        .update({ arquivado_em: new Date().toISOString() })
+        .eq("criado_por", userId)
+        .is("arquivado_em", null);
+
+      // 2. Remove atribuição de tarefas atribuídas ao usuário
+      await supabaseAdmin
+        .from("tarefas")
+        .update({ atribuido_para: null })
+        .eq("atribuido_para", userId);
+
+      // 3. Remove referência de anexos enviados pelo usuário
+      await supabaseAdmin
+        .from("anexos")
+        .update({ enviado_por: null })
+        .eq("enviado_por", userId);
+
+      // 4. Deleta comentários do usuário
+      await supabaseAdmin
+        .from("comentarios")
+        .delete()
+        .eq("autor_id", userId);
+
+      // 5. Anonimiza audit_logs (não pode deletar — log imutável)
+      await supabaseAdmin
+        .from("audit_logs")
+        .update({ user_id: null })
+        .eq("user_id", userId);
+
+      // 6. Deleta o usuário do auth (cascade apaga o profile)
+      const { error: deleteError } = await supabaseAdmin.auth.admin.deleteUser(userId);
+
+      if (deleteError) {
+        return new Response(JSON.stringify({ error: deleteError.message }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    return new Response(JSON.stringify({ error: "Ação inválida." }), {
+      status: 400,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
+
   } catch (err) {
     return new Response(JSON.stringify({ error: String(err) }), {
       status: 500,

@@ -13,7 +13,7 @@ import { SetorBadge } from "@/components/tarefas/SetorBadge";
 import { STATUS_LABELS } from "@/constants/setores";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { ArrowLeft, Paperclip, Send, Archive, Loader2 } from "lucide-react";
+import { ArrowLeft, Paperclip, Send, Archive, Loader2, X, CheckCircle2, ClipboardCheck } from "lucide-react";
 import type { Status } from "@/types";
 
 const VALID_STATUSES: Status[] = ["a_fazer", "em_andamento", "aguardando", "concluido"];
@@ -30,22 +30,43 @@ export function TarefaDetailPage() {
   const createComentario = useCreateComentario();
   const uploadAnexo = useUploadAnexo();
   const [comentario, setComentario] = useState("");
+  const [arquivoComentario, setArquivoComentario] = useState<File | null>(null);
 
   if (isLoading) return <div className="flex justify-center py-12"><Loader2 className="h-8 w-8 animate-spin" /></div>;
   if (!tarefa) return <p className="text-center text-muted-foreground py-12">Tarefa não encontrada.</p>;
 
+  const isCrossSetor = tarefa.setor_origem !== tarefa.setor_destino;
+
+  // Pode mover pelo dropdown (inclui concluido): gestor/admin, ou criador em tarefa do próprio setor
+  const canMoveToConcluido =
+    profile?.role === "gestor" ||
+    profile?.role === "admin" ||
+    (tarefa.criado_por === profile?.id && !isCrossSetor);
+
+  // Pode usar o dropdown de status (exceto concluido para quem não tem canMoveToConcluido)
   const canUpdateStatus =
     profile?.role === "gestor" ||
     profile?.role === "admin" ||
     tarefa.criado_por === profile?.id ||
-    tarefa.atribuido_para === profile?.id;
+    tarefa.atribuido_para === profile?.id ||
+    profile?.setor === tarefa.setor_destino;
 
-  const canArchive = profile?.role === "gestor" || profile?.role === "admin";
+  const canArchive = profile?.role === "gestor" || profile?.role === "admin" || tarefa.criado_por === profile?.id;
 
-  const canMoveToConcluido =
-    tarefa.criado_por === profile?.id ||
-    profile?.role === "gestor" ||
-    profile?.role === "admin";
+  // Pode usar o botão "Validar e Concluir" (apenas quando aguardando)
+  const canValidarConcluir =
+    tarefa.status === "aguardando" && (
+      tarefa.criado_por === profile?.id ||
+      profile?.role === "gestor" ||
+      profile?.role === "admin"
+    );
+
+  // Executor: não é o criador, mas é o atribuído ou é do setor destino
+  const isExecutor =
+    tarefa.criado_por !== profile?.id && (
+      tarefa.atribuido_para === profile?.id ||
+      profile?.setor === tarefa.setor_destino
+    );
 
   const availableStatuses = VALID_STATUSES.filter((s) => {
     if (s === "concluido" && !canMoveToConcluido) return false;
@@ -53,7 +74,33 @@ export function TarefaDetailPage() {
   });
 
   async function handleStatusChange(status: Status) {
+    if (!profile) return;
     await updateStatus.mutateAsync({ id: tarefa!.id, status });
+    await createComentario.mutateAsync({
+      tarefa_id: tarefa!.id,
+      autor_id: profile.id,
+      conteudo: `🔄 ${profile.nome} moveu para **${STATUS_LABELS[status]}**`,
+    });
+  }
+
+  async function handleSolicitarValidacao() {
+    if (!profile) return;
+    await updateStatus.mutateAsync({ id: tarefa!.id, status: "aguardando" });
+    await createComentario.mutateAsync({
+      tarefa_id: tarefa!.id,
+      autor_id: profile.id,
+      conteudo: `✅ ${profile.nome} concluiu a execução e solicita validação desta tarefa.`,
+    });
+  }
+
+  async function handleValidarConcluir() {
+    if (!profile) return;
+    await updateStatus.mutateAsync({ id: tarefa!.id, status: "concluido" });
+    await createComentario.mutateAsync({
+      tarefa_id: tarefa!.id,
+      autor_id: profile.id,
+      conteudo: `🎉 ${profile.nome} validou e concluiu esta tarefa.`,
+    });
   }
 
   async function handleArquivar() {
@@ -62,9 +109,14 @@ export function TarefaDetailPage() {
   }
 
   async function handleComentario() {
-    if (!comentario.trim() || !profile) return;
-    await createComentario.mutateAsync({ tarefa_id: tarefa!.id, autor_id: profile.id, conteudo: comentario.trim() });
+    if ((!comentario.trim() && !arquivoComentario) || !profile) return;
+    if (arquivoComentario) {
+      await uploadAnexo.mutateAsync({ tarefaId: tarefa!.id, file: arquivoComentario, userId: profile.id });
+    }
+    const conteudo = comentario.trim() || `📎 ${arquivoComentario?.name}`;
+    await createComentario.mutateAsync({ tarefa_id: tarefa!.id, autor_id: profile.id, conteudo });
     setComentario("");
+    setArquivoComentario(null);
   }
 
   async function handleAnexo(e: React.ChangeEvent<HTMLInputElement>) {
@@ -115,6 +167,45 @@ export function TarefaDetailPage() {
                 <p className="text-sm font-medium">{STATUS_LABELS[tarefa.status]}</p>
               )}
             </div>
+
+            {/* Botão: executor solicita validação */}
+            {isExecutor && tarefa.status !== "aguardando" && tarefa.status !== "concluido" && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="w-full text-xs border-amber-400 text-amber-700 hover:bg-amber-50"
+                onClick={handleSolicitarValidacao}
+                disabled={updateStatus.isPending || createComentario.isPending}
+              >
+                <ClipboardCheck className="h-3 w-3 mr-1" />
+                Solicitar Validação
+              </Button>
+            )}
+
+            {/* Banner: aguardando validação */}
+            {tarefa.status === "aguardando" && !canValidarConcluir && (
+              <div className="rounded-md bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-700">
+                Aguardando validação do criador.
+              </div>
+            )}
+
+            {/* Botão: criador/gestor/admin valida e conclui */}
+            {canValidarConcluir && (
+              <Button
+                size="sm"
+                className="w-full text-xs bg-emerald-600 hover:bg-emerald-700 text-white"
+                onClick={handleValidarConcluir}
+                disabled={updateStatus.isPending || createComentario.isPending}
+              >
+                <CheckCircle2 className="h-3 w-3 mr-1" />
+                Validar e Concluir
+              </Button>
+            )}
+            {isCrossSetor && !tarefa.atribuido_para && tarefa.status !== "concluido" && (
+              <div className="rounded-md bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-700">
+                Nenhum responsável atribuído. Qualquer membro do setor destino pode executar.
+              </div>
+            )}
             {tarefa.prazo && (
               <div>
                 <p className="text-xs text-muted-foreground">Prazo</p>
@@ -156,35 +247,77 @@ export function TarefaDetailPage() {
         </CardContent>
       </Card>
 
-      {/* Comentários */}
+      {/* Atividade */}
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-sm">Comentários ({comentarios.length})</CardTitle>
+          <CardTitle className="text-sm">Atividade ({comentarios.length})</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4">
-          {comentarios.map((c) => (
-            <div key={c.id} className="space-y-1">
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-medium">{c.autor?.nome ?? "—"}</span>
-                <span className="text-xs text-muted-foreground">
-                  {format(new Date(c.criado_em), "dd/MM HH:mm", { locale: ptBR })}
-                </span>
-                {c.editado_em && <span className="text-xs text-muted-foreground">(editado)</span>}
+        <CardContent className="space-y-3">
+          {comentarios.map((c) => {
+            const isLog = c.conteudo.startsWith("🔄") || c.conteudo.startsWith("✅") || c.conteudo.startsWith("🎉");
+            if (isLog) {
+              return (
+                <div key={c.id} className="flex items-center gap-2 text-xs text-muted-foreground py-0.5">
+                  <div className="h-px flex-1 bg-border" />
+                  <span className="shrink-0">{c.conteudo.replace(/\*\*/g, "")}</span>
+                  <span className="shrink-0">·</span>
+                  <span className="shrink-0">{format(new Date(c.criado_em), "dd/MM HH:mm", { locale: ptBR })}</span>
+                  <div className="h-px flex-1 bg-border" />
+                </div>
+              );
+            }
+            return (
+              <div key={c.id} className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-medium">{c.autor?.nome ?? "—"}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {format(new Date(c.criado_em), "dd/MM HH:mm", { locale: ptBR })}
+                  </span>
+                  {c.editado_em && <span className="text-xs text-muted-foreground">(editado)</span>}
+                </div>
+                <p className="text-sm whitespace-pre-wrap">{c.conteudo}</p>
               </div>
-              <p className="text-sm whitespace-pre-wrap">{c.conteudo}</p>
+            );
+          })}
+          <div className="space-y-2">
+            {arquivoComentario && (
+              <div className="flex items-center gap-2 text-xs bg-muted rounded px-2 py-1.5 w-fit">
+                <Paperclip className="h-3 w-3 text-muted-foreground" />
+                <span className="truncate max-w-[200px]">{arquivoComentario.name}</span>
+                <button onClick={() => setArquivoComentario(null)} className="text-muted-foreground hover:text-foreground">
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+            )}
+            <div className="flex gap-2">
+              <Textarea
+                placeholder="Escreva um comentário..."
+                value={comentario}
+                onChange={(e) => setComentario(e.target.value)}
+                rows={2}
+                className="resize-none"
+              />
+              <div className="flex flex-col gap-1">
+                <label className="cursor-pointer flex items-center justify-center h-9 w-9 rounded-md border border-input bg-background hover:bg-accent transition-colors" title="Anexar arquivo">
+                  <Paperclip className="h-4 w-4 text-muted-foreground" />
+                  <input
+                    type="file"
+                    className="sr-only"
+                    accept="image/jpeg,image/png,image/webp,application/pdf"
+                    onChange={(e) => setArquivoComentario(e.target.files?.[0] ?? null)}
+                  />
+                </label>
+                <Button
+                  size="icon"
+                  onClick={handleComentario}
+                  disabled={(!comentario.trim() && !arquivoComentario) || createComentario.isPending || uploadAnexo.isPending}
+                >
+                  {(createComentario.isPending || uploadAnexo.isPending)
+                    ? <Loader2 className="h-4 w-4 animate-spin" />
+                    : <Send className="h-4 w-4" />}
+                </Button>
+              </div>
             </div>
-          ))}
-          <div className="flex gap-2">
-            <Textarea
-              placeholder="Escreva um comentário..."
-              value={comentario}
-              onChange={(e) => setComentario(e.target.value)}
-              rows={2}
-              className="resize-none"
-            />
-            <Button size="icon" onClick={handleComentario} disabled={!comentario.trim() || createComentario.isPending}>
-              <Send className="h-4 w-4" />
-            </Button>
           </div>
         </CardContent>
       </Card>

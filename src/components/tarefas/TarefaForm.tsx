@@ -27,9 +27,10 @@ interface Props {
   onSubmit: (data: FormData) => void | Promise<void>;
   isLoading?: boolean;
   submitLabel?: string;
+  extraContent?: React.ReactNode;
 }
 
-export function TarefaForm({ defaultValues, onSubmit, isLoading, submitLabel = "Salvar" }: Props) {
+export function TarefaForm({ defaultValues, onSubmit, isLoading, submitLabel = "Salvar", extraContent }: Props) {
   const { data: profiles = [] } = useProfiles();
   const { register, handleSubmit, setValue, watch, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema),
@@ -95,17 +96,25 @@ export function TarefaForm({ defaultValues, onSubmit, isLoading, submitLabel = "
       </div>
 
       <div className="space-y-1">
-        <Label>Responsável</Label>
+        <Label>Designar Para</Label>
         <Select value={watchedFields[3] ?? ""} onValueChange={(v) => setValue("atribuido_para", v === "_none" ? undefined : v)}>
-          <SelectTrigger><SelectValue placeholder="Setor geral (sem responsável)" /></SelectTrigger>
+          <SelectTrigger><SelectValue placeholder="Setor geral (sem designação)" /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="_none">Sem responsável</SelectItem>
-            {profiles.filter(p => p.ativo).map((p) => (
-              <SelectItem key={p.id} value={p.id}>{p.nome}</SelectItem>
-            ))}
+            <SelectItem value="_none">Setor geral</SelectItem>
+            {profiles
+              .filter(p => p.ativo && p.setor === watchedFields[1])
+              .map((p) => (
+                <SelectItem key={p.id} value={p.id}>{p.nome}</SelectItem>
+              ))
+            }
           </SelectContent>
         </Select>
+        {profiles.filter(p => p.ativo && p.setor === watchedFields[1]).length === 0 && watchedFields[1] && (
+          <p className="text-xs text-muted-foreground">Nenhum usuário cadastrado neste setor.</p>
+        )}
       </div>
+
+      {extraContent}
 
       <Button type="submit" disabled={isLoading} className="w-full">
         {isLoading ? "Salvando..." : submitLabel}
