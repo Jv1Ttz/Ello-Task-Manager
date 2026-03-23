@@ -7,8 +7,15 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { SETORES, STATUS_LABELS, PRIORIDADE_LABELS, KANBAN_COLUMNS } from "@/constants/setores";
 import type { TarefaWithRelations } from "@/types";
-import { Plus, Loader2 } from "lucide-react";
+import { Plus, Loader2, ClipboardList, Zap, Clock, CheckCircle2 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+
+const COLUMN_META: Record<string, { color: string; bg: string; icon: React.ElementType }> = {
+  a_fazer:      { color: "border-slate-400",  bg: "bg-slate-50 dark:bg-slate-900/40",  icon: ClipboardList },
+  em_andamento: { color: "border-blue-500",   bg: "bg-blue-50 dark:bg-blue-900/20",    icon: Zap },
+  aguardando:   { color: "border-amber-400",  bg: "bg-amber-50 dark:bg-amber-900/20",  icon: Clock },
+  concluido:    { color: "border-emerald-500",bg: "bg-emerald-50 dark:bg-emerald-900/20", icon: CheckCircle2 },
+};
 
 export function KanbanPage() {
   const { profile } = useAuth();
@@ -20,6 +27,7 @@ export function KanbanPage() {
   });
   const { data: profiles = [] } = useProfiles();
   const updateStatus = useUpdateTarefaStatus();
+  void updateStatus;
 
   const canCreate = profile?.ativo;
 
@@ -31,12 +39,16 @@ export function KanbanPage() {
     });
   };
 
-  void updateStatus;
-
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
+      {/* Cabeçalho */}
       <div className="flex items-center justify-between flex-wrap gap-3">
-        <h1 className="text-xl font-semibold">Kanban</h1>
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Quadro de Tarefas</h1>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            {tarefas.length} tarefa{tarefas.length !== 1 ? "s" : ""} visível{tarefas.length !== 1 ? "s" : ""}
+          </p>
+        </div>
         <div className="flex items-center gap-2 flex-wrap">
           <Select value={filters.setor} onValueChange={(v) => setFilters((f) => ({ ...f, setor: v === "_all" ? "" : v }))}>
             <SelectTrigger className="w-36 h-8 text-xs"><SelectValue placeholder="Setor" /></SelectTrigger>
@@ -68,18 +80,39 @@ export function KanbanPage() {
       </div>
 
       {isLoading ? (
-        <div className="flex justify-center py-12"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>
+        <div className="flex justify-center py-20">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 items-start">
           {KANBAN_COLUMNS.map((status) => {
             const cards = byStatus(status);
+            const meta = COLUMN_META[status];
+            const Icon = meta.icon;
             return (
-              <div key={status} className="bg-muted/40 rounded-lg p-3 space-y-2 min-h-[200px]">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-sm font-semibold">{STATUS_LABELS[status]}</h2>
-                  <span className="text-xs text-muted-foreground bg-muted rounded-full px-2">{cards.length}</span>
+              <div key={status} className={`rounded-xl border-t-4 ${meta.color} ${meta.bg} shadow-sm`}>
+                {/* Cabeçalho da coluna */}
+                <div className="flex items-center justify-between px-3 py-2.5 border-b border-black/5">
+                  <div className="flex items-center gap-2">
+                    <Icon className="h-4 w-4 text-muted-foreground" />
+                    <h2 className="text-sm font-semibold">{STATUS_LABELS[status]}</h2>
+                  </div>
+                  <span className="text-xs font-medium bg-white/60 dark:bg-black/20 border border-black/10 rounded-full px-2 py-0.5">
+                    {cards.length}
+                  </span>
                 </div>
-                {cards.map((t) => <TarefaCard key={t.id} tarefa={t} />)}
+
+                {/* Cards */}
+                <div className="p-2 space-y-2 min-h-[180px]">
+                  {cards.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-10 text-center gap-2 opacity-40">
+                      <Icon className="h-8 w-8" />
+                      <p className="text-xs font-medium">Nenhuma tarefa</p>
+                    </div>
+                  ) : (
+                    cards.map((t) => <TarefaCard key={t.id} tarefa={t} />)
+                  )}
+                </div>
               </div>
             );
           })}

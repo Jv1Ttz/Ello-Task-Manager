@@ -23,8 +23,13 @@ export function Navbar() {
   return (
     <nav className="border-b bg-background sticky top-0 z-40">
       <div className="container flex h-14 items-center gap-4">
-        <Link to="/kanban" className="font-bold text-lg mr-4">
-          ETM
+        <Link to="/kanban" className="flex items-center gap-2 mr-4">
+          <img
+            src="/Gemini_Generated_Image_1h1rwi1h1rwi1h1r.png"
+            alt="ETM"
+            className="h-8 w-8 object-contain"
+          />
+          <span className="font-bold text-lg">ETM</span>
         </Link>
         <div className="flex items-center gap-1 flex-1">
           {links.map((link) => (

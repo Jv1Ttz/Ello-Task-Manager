@@ -33,10 +33,20 @@ Deno.serve(async (req) => {
       { global: { headers: { Authorization: authHeader } } }
     );
 
+    // Pega o ID do usuário logado
+    const { data: { user }, error: userError } = await supabaseUser.auth.getUser();
+    if (userError || !user) {
+      return new Response(JSON.stringify({ error: "Não autorizado" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     // Verifica se quem está chamando é admin
     const { data: callerProfile, error: profileError } = await supabaseUser
       .from("profiles")
       .select("role")
+      .eq("id", user.id)
       .single();
 
     if (profileError || callerProfile?.role !== "admin") {

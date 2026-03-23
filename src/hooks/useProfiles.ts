@@ -54,8 +54,12 @@ export function useCreateUser() {
       setor: Setor;
       role: Role;
     }) => {
+      const { data: { session } } = await supabase.auth.getSession();
       const { data, error } = await supabase.functions.invoke("create-user", {
         body: { email, password, nome, setor, role },
+        headers: {
+          Authorization: `Bearer ${session?.access_token}`,
+        },
       });
       if (error) throw error;
       if (data?.error) throw new Error(data.error);

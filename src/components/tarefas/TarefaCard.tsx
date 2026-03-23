@@ -18,30 +18,33 @@ export function TarefaCard({ tarefa }: Props) {
   return (
     <Link to={`/tarefas/${tarefa.id}`}>
       <Card className={cn(
-        "hover:shadow-md transition-shadow cursor-pointer",
-        tarefa.prioridade === "urgente" && "border-red-300 bg-red-50/30"
+        "hover:shadow-md hover:-translate-y-0.5 transition-all cursor-pointer bg-white dark:bg-card border border-border",
+        tarefa.prioridade === "urgente" && "border-l-4 border-l-red-500"
       )}>
-        <CardContent className="p-3 space-y-2">
+        <CardContent className="p-3 space-y-2.5">
           <div className="flex items-start justify-between gap-2">
-            <p className="text-sm font-medium leading-tight line-clamp-2">{tarefa.titulo}</p>
+            <p className="text-sm font-semibold leading-snug line-clamp-2">{tarefa.titulo}</p>
             <PrioridadeBadge prioridade={tarefa.prioridade} />
           </div>
           <div className="flex items-center gap-1 flex-wrap">
             <SetorBadge setor={tarefa.setor_origem} />
-            <ArrowRight className="h-3 w-3 text-muted-foreground" />
+            <ArrowRight className="h-3 w-3 text-muted-foreground shrink-0" />
             <SetorBadge setor={tarefa.setor_destino} />
           </div>
-          {tarefa.prazo && (
-            <div className={cn("flex items-center gap-1 text-xs", isOverdue ? "text-red-600 font-medium" : "text-muted-foreground")}>
-              <Calendar className="h-3 w-3" />
-              {format(new Date(tarefa.prazo), "dd/MM/yyyy", { locale: ptBR })}
-            </div>
-          )}
-          {tarefa.responsavel && (
-            <p className="text-xs text-muted-foreground truncate">
-              {tarefa.responsavel.nome}
-            </p>
-          )}
+          <div className="flex items-center justify-between pt-0.5">
+            {tarefa.prazo ? (
+              <div className={cn("flex items-center gap-1 text-xs", isOverdue ? "text-red-600 font-semibold" : "text-muted-foreground")}>
+                <Calendar className="h-3 w-3" />
+                {format(new Date(tarefa.prazo), "dd/MM/yyyy", { locale: ptBR })}
+                {isOverdue && <span className="text-[10px] bg-red-100 text-red-600 rounded px-1">Vencida</span>}
+              </div>
+            ) : <span />}
+            {tarefa.responsavel && (
+              <p className="text-xs text-muted-foreground truncate max-w-[100px] text-right">
+                {tarefa.responsavel.nome.split(" ")[0]}
+              </p>
+            )}
+          </div>
         </CardContent>
       </Card>
     </Link>
